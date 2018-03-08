@@ -73,17 +73,18 @@ export function getTypeName(value: any, nest = 0): string | null {
 }
 
 const logs: { [key: string]: Set<string> } = {};
+const trackedObjects = new WeakMap<object, [string, number]>();
 
 export function $_$twiz(name: string, value: any, pos: number, filename: string, opts: any) {
+    const objectDeclaration = trackedObjects.get(value);
     const index = JSON.stringify({ filename, pos, opts } as IKey);
     try {
         const typeName = getTypeName(value);
         if (!logs[index]) {
             logs[index] = new Set();
         }
-        if (typeName) {
-            logs[index].add(typeName);
-        }
+        const typeSpec = JSON.stringify([typeName, objectDeclaration]);
+        logs[index].add(typeSpec);
     } catch (e) {
         if (e instanceof NestError) {
             // simply ignore the type
@@ -98,7 +99,14 @@ export namespace $_$twiz {
     export const get = () => {
         return Object.keys(logs).map((key) => {
             const { filename, pos, opts } = JSON.parse(key) as IKey;
-            return [filename, pos, Array.from(logs[key]), opts] as [string, number, string[], any];
+            const typeOptions = Array.from(logs[key]).map((v) => JSON.parse(v));
+            return [filename, pos, typeOptions, opts] as [string, number, string[], any];
         });
+    };
+    export const track = (v: any, p: number, f: string) => {
+        if (v && (typeof v === 'object' || typeof v === 'function')) {
+            trackedObjects.set(v, [f, p]);
+        }
+        return v;
     };
 }

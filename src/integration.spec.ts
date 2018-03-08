@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as ts from 'typescript';
 import * as vm from 'vm';
 
-import { transpileSource } from './test-utils/transpile';
+import { transpileSource, virtualCompilerHost } from './test-utils/transpile';
 
 const mockFs = {
     readFileSync: jest.fn(fs.readFileSync),
@@ -25,6 +25,10 @@ function typeWiz(input: string, typeCheck = false, options?: IApplyTypesOptions)
     // Step 4: put the collected typed into the code
     mockFs.readFileSync.mockReturnValue(input);
     mockFs.writeFileSync.mockImplementationOnce(() => 0);
+
+    if (options && options.tsConfig) {
+        options.tsCompilerHost = virtualCompilerHost(input, 'c:/test.ts');
+    }
 
     applyTypes(collectedTypes, options);
 
@@ -171,6 +175,50 @@ describe('function parameters', () => {
                 return b || 0;
             }
             optional() + optional(10);
+        `);
+    });
+
+    it('should use TypeScript inference to find argument types', () => {
+        const input = `
+            function f(a) {
+            }
+
+            const arr: string[] = [];
+            f(arr);
+        `;
+
+        expect(typeWiz(input, false, { tsConfig: {} })).toBe(`
+            function f(a: string[]) {
+            }
+
+            const arr: string[] = [];
+            f(arr);
+        `);
+    });
+
+    it('should discover generic types using Type Inference', () => {
+        const input = `
+            function f(a) {
+                return a;
+            }
+
+            const promise = Promise.resolve(15);
+            f(promise);
+        `;
+
+        expect(
+            typeWiz(input, false, {
+                tsConfig: {
+                    target: ts.ScriptTarget.ES2015,
+                },
+            }),
+        ).toBe(`
+            function f(a: Promise<number>) {
+                return a;
+            }
+
+            const promise = Promise.resolve(15);
+            f(promise);
         `);
     });
 });

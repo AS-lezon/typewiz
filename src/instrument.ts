@@ -45,10 +45,19 @@ function visit(node: ts.Node, replacements: Replacement[], fileName: string) {
                 const instrumentExpr = `$_$twiz(${params.join(',')})`;
                 if (isShortArrow) {
                     replacements.push(Replacement.insert(node.body.getStart(), `(${instrumentExpr},`));
-                    replacements.push(Replacement.insert(node.body.getEnd(), `)`));
+                    replacements.push(Replacement.insert(node.body.getEnd(), `)`, 10));
                 } else {
                     replacements.push(Replacement.insert(node.body.getStart() + 1, `${instrumentExpr};`));
                 }
+            }
+        }
+    }
+
+    if (ts.isCallExpression(node) && node.expression.getText() !== 'require.context') {
+        for (const arg of node.arguments) {
+            if (!ts.isStringLiteral(arg) && !ts.isNumericLiteral(arg)) {
+                replacements.push(Replacement.insert(arg.getStart(), '$_$twiz.track('));
+                replacements.push(Replacement.insert(arg.getEnd(), `,${arg.getStart()},${JSON.stringify(fileName)})`));
             }
         }
     }
@@ -91,8 +100,12 @@ function visit(node: ts.Node, replacements: Replacement[], fileName: string) {
     node.forEachChild((child) => visit(child, replacements, fileName));
 }
 
-const declaration =
-    'declare function $_$twiz(name: string, value: any, pos: number, filename: string, opts: any): void;\n';
+const declaration = `
+    declare function $_$twiz(name: string, value: any, pos: number, filename: string, opts: any): void;
+    declare namespace $_$twiz {
+        function track<T>(v: T, p: number, f: string): T;
+    }
+`;
 
 export function instrument(source: string, fileName: string) {
     const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
